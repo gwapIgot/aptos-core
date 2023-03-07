@@ -6,7 +6,7 @@
 use aptos_config::network_id::PeerNetworkId;
 use aptos_network::transport::ConnectionMetadata;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, convert::TryFrom};
+use std::{collections::HashMap, convert::TryFrom, time::Duration};
 use thiserror::Error;
 
 pub type Result<T, E = PeerMonitoringServiceError> = ::std::result::Result<T, E>;
@@ -37,6 +37,7 @@ pub enum PeerMonitoringServiceMessage {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum PeerMonitoringServiceRequest {
     GetNetworkInformation,    // Returns relevant network information for the peer
+    GetNodeInformation,       // Returns relevant node information about the peer
     GetServerProtocolVersion, // Fetches the protocol version run by the server
     LatencyPing(LatencyPingRequest), // A simple message used by the client to ensure liveness and measure latency
 }
@@ -46,6 +47,7 @@ impl PeerMonitoringServiceRequest {
     pub fn get_label(&self) -> &'static str {
         match self {
             Self::GetNetworkInformation => "get_network_information",
+            Self::GetNodeInformation => "get_node_information",
             Self::GetServerProtocolVersion => "get_server_protocol_version",
             Self::LatencyPing(_) => "latency_ping",
         }
@@ -64,6 +66,7 @@ pub struct LatencyPingRequest {
 pub enum PeerMonitoringServiceResponse {
     LatencyPing(LatencyPingResponse), // A simple message to respond to latency checks (i.e., pings)
     NetworkInformation(NetworkInformationResponse), // Holds the response for network information
+    NodeInformation(NodeInformationResponse), //Holds the response for node information
     ServerProtocolVersion(ServerProtocolVersionResponse), // Returns the current server protocol version
 }
 
@@ -73,6 +76,7 @@ impl PeerMonitoringServiceResponse {
         match self {
             Self::LatencyPing(_) => "latency_ping",
             Self::NetworkInformation(_) => "network_information",
+            Self::NodeInformation(_) => "node_information",
             Self::ServerProtocolVersion(_) => "server_protocol_version",
         }
     }
@@ -89,13 +93,23 @@ pub struct LatencyPingResponse {
 pub struct NetworkInformationResponse {
     pub connected_peers: HashMap<PeerNetworkId, ConnectionMetadata>, // Connected peers
     pub distance_from_validators: u64, // The distance of the peer from the validator set
-                                       // TODO: add the rest of the information here!
 }
 
 /// A response for the server protocol version request
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ServerProtocolVersionResponse {
     pub version: u64, // The version of the peer monitoring service run by the server
+}
+
+/// A response for the node information request
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NodeInformationResponse {
+    pub git_hash: String, // The git hash of the build the peer is running on
+    pub highest_synced_epoch: u64, // The highest synced epoch of the node
+    pub highest_synced_version: u64, // The highest synced version of the node
+    pub ledger_timestamp_usecs: u64, // The latest timestamp of the blockchain (in microseconds)
+    pub lowest_available_version: u64, // The lowest stored version of the node (in storage)
+    pub uptime: Duration, // The amount of time the peer has been running
 }
 
 #[derive(Clone, Debug, Error)]
@@ -138,6 +152,20 @@ impl TryFrom<PeerMonitoringServiceResponse> for ServerProtocolVersionResponse {
             PeerMonitoringServiceResponse::ServerProtocolVersion(inner) => Ok(inner),
             _ => Err(UnexpectedResponseError(format!(
                 "expected server_protocol_version_response, found {}",
+                response.get_label()
+            ))),
+        }
+    }
+}
+
+impl TryFrom<PeerMonitoringServiceResponse> for NodeInformationResponse {
+    type Error = UnexpectedResponseError;
+
+    fn try_from(response: PeerMonitoringServiceResponse) -> Result<Self, Self::Error> {
+        match response {
+            PeerMonitoringServiceResponse::NodeInformation(inner) => Ok(inner),
+            _ => Err(UnexpectedResponseError(format!(
+                "expected node_information_response, found {}",
                 response.get_label()
             ))),
         }

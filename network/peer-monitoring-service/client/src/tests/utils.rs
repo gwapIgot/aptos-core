@@ -9,7 +9,8 @@ use crate::{
 };
 use aptos_config::{
     config::{
-        LatencyMonitoringConfig, NetworkMonitoringConfig, NodeConfig, PeerMonitoringServiceConfig,
+        LatencyMonitoringConfig, NetworkMonitoringConfig, NodeConfig, NodeMonitoringConfig,
+        PeerMonitoringServiceConfig,
     },
     network_id::{NetworkId, PeerNetworkId},
 };
@@ -18,15 +19,16 @@ use aptos_network::{
     transport::ConnectionMetadata,
 };
 use aptos_peer_monitoring_service_types::{
-    LatencyPingRequest, LatencyPingResponse, NetworkInformationResponse,
+    LatencyPingRequest, LatencyPingResponse, NetworkInformationResponse, NodeInformationResponse,
     PeerMonitoringServiceMessage, PeerMonitoringServiceRequest, PeerMonitoringServiceResponse,
     ServerProtocolVersionResponse,
 };
 use aptos_time_service::{MockTimeService, TimeService, TimeServiceTrait};
 use aptos_types::PeerId;
 use maplit::hashmap;
+use rand::{rngs::OsRng, Rng};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -68,6 +70,14 @@ pub async fn elapse_network_info_update_interval(
         .await;
 }
 
+/// Elapses enough time for a node info update to occur
+pub async fn elapse_node_info_update_interval(node_config: NodeConfig, mock_time: MockTimeService) {
+    let node_monitoring_config = node_config.peer_monitoring_service.node_monitoring;
+    mock_time
+        .advance_ms_async(node_monitoring_config.node_info_request_interval_ms + 1)
+        .await;
+}
+
 /// Elapses enough time for the monitoring loop to execute
 pub async fn elapse_peer_monitor_interval(node_config: NodeConfig, mock_time: MockTimeService) {
     let peer_monitoring_config = node_config.peer_monitoring_service;
@@ -76,30 +86,73 @@ pub async fn elapse_peer_monitor_interval(node_config: NodeConfig, mock_time: Mo
         .await;
 }
 
-/// Returns a config where latency pings don't refresh
-pub fn get_config_without_latency_pings() -> NodeConfig {
+/// Returns a config where only latency pings are refreshed
+pub fn get_config_with_only_latency_ping_requests() -> NodeConfig {
     NodeConfig {
         peer_monitoring_service: PeerMonitoringServiceConfig {
-            latency_monitoring: LatencyMonitoringConfig {
-                latency_ping_interval_ms: 1_000_000_000, // Unrealistically high
-                ..Default::default()
-            },
+            network_monitoring: get_disabled_network_monitoring_config(),
+            node_monitoring: get_disabled_node_monitoring_config(),
             ..Default::default()
         },
         ..Default::default()
     }
 }
 
-/// Returns a config where network info requests don't refresh
-pub fn get_config_without_network_info_requests() -> NodeConfig {
+/// Returns a config where only network infos are refreshed
+pub fn get_config_with_only_network_info_requests() -> NodeConfig {
     NodeConfig {
         peer_monitoring_service: PeerMonitoringServiceConfig {
-            network_monitoring: NetworkMonitoringConfig {
-                network_info_request_interval_ms: 1_000_000_000, // Unrealistically high
-                ..Default::default()
-            },
+            latency_monitoring: get_disabled_latency_monitoring_config(),
+            node_monitoring: get_disabled_node_monitoring_config(),
             ..Default::default()
         },
+        ..Default::default()
+    }
+}
+
+/// Returns a config where only node infos are refreshed
+pub fn get_config_with_only_node_info_requests() -> NodeConfig {
+    NodeConfig {
+        peer_monitoring_service: PeerMonitoringServiceConfig {
+            latency_monitoring: get_disabled_latency_monitoring_config(),
+            node_monitoring: get_disabled_node_monitoring_config(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Returns a config where node info requests don't refresh
+pub fn get_config_without_node_info_requests() -> NodeConfig {
+    NodeConfig {
+        peer_monitoring_service: PeerMonitoringServiceConfig {
+            node_monitoring: get_disabled_node_monitoring_config(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Returns a latency monitoring config where latencies aren't refreshed
+fn get_disabled_latency_monitoring_config() -> LatencyMonitoringConfig {
+    LatencyMonitoringConfig {
+        latency_ping_interval_ms: 1_000_000_000, // Unrealistically high
+        ..Default::default()
+    }
+}
+
+/// Returns a network monitoring config where network infos aren't refreshed
+fn get_disabled_network_monitoring_config() -> NetworkMonitoringConfig {
+    NetworkMonitoringConfig {
+        network_info_request_interval_ms: 1_000_000_000, // Unrealistically high
+        ..Default::default()
+    }
+}
+
+/// Returns a node monitoring config where node infos aren't refreshed
+fn get_disabled_node_monitoring_config() -> NodeMonitoringConfig {
+    NodeMonitoringConfig {
+        node_info_request_interval_ms: 1_000_000_000, // Unrealistically high
         ..Default::default()
     }
 }
@@ -114,6 +167,11 @@ pub fn get_distance_from_validators(peer_network_id: &PeerNetworkId) -> u64 {
     }
 }
 
+/// Returns a random u64 for test purposes
+pub fn get_random_u64() -> u64 {
+    OsRng.gen()
+}
+
 /// Initializes all the peer states by running the peer monitor loop
 /// once and ensuring the correct requests and responses are received.
 pub async fn initialize_and_verify_peer_states(
@@ -124,21 +182,42 @@ pub async fn initialize_and_verify_peer_states(
     peer_network_id: &PeerNetworkId,
     mock_time: &MockTimeService,
 ) -> (HashMap<PeerNetworkId, ConnectionMetadata>, u64) {
-    // Elapse enough time for the peer monitor to execute
-    let time_before_update = mock_time.now();
-    elapse_peer_monitor_interval(node_config.clone(), mock_time.clone()).await;
-
-    // Create the test response data
+    // Create the network info response
     let connected_peers =
         hashmap! { PeerNetworkId::random() => ConnectionMetadata::mock(PeerId::random()) };
     let distance_from_validators = get_distance_from_validators(peer_network_id);
+    let network_info_response = NetworkInformationResponse {
+        connected_peers: connected_peers.clone(),
+        distance_from_validators,
+    };
+
+    // Create the node info response
+    let git_hash = aptos_build_info::get_git_hash();
+    let highest_synced_epoch = get_random_u64();
+    let highest_synced_version = get_random_u64();
+    let ledger_timestamp_usecs = get_random_u64();
+    let lowest_available_version = get_random_u64();
+    let uptime = Duration::from_millis(get_random_u64());
+    let node_info_response = NodeInformationResponse {
+        git_hash: git_hash.clone(),
+        highest_synced_epoch,
+        highest_synced_version,
+        ledger_timestamp_usecs,
+        lowest_available_version,
+        uptime,
+    };
+
+    // Elapse enough time for the peer monitor to execute
+    let time_before_update = mock_time.now();
+    elapse_peer_monitor_interval(node_config.clone(), mock_time.clone()).await;
 
     // Verify the initial client requests and send responses
     verify_all_requests_and_respond(
         network_id,
         mock_monitoring_server,
-        &connected_peers,
-        distance_from_validators,
+        3,
+        Some(network_info_response),
+        Some(node_info_response),
     )
     .await;
 
@@ -157,7 +236,13 @@ pub async fn initialize_and_verify_peer_states(
         peer_network_id,
         &connected_peers,
         distance_from_validators,
+        git_hash,
+        highest_synced_epoch,
+        highest_synced_version,
+        ledger_timestamp_usecs,
+        lowest_available_version,
         1,
+        uptime,
     );
 
     (connected_peers, distance_from_validators)
@@ -381,44 +466,87 @@ pub async fn verify_and_handle_network_info_request(
     );
 }
 
+/// Elapses enough time for a node info request and handles the response
+pub async fn verify_and_handle_node_info_request(
+    network_id: &NetworkId,
+    mock_monitoring_server: &mut MockMonitoringServer,
+    peer_monitor_state: &PeerMonitorState,
+    node_config: &NodeConfig,
+    peer_network_id: &PeerNetworkId,
+    mock_time: &MockTimeService,
+) {
+    // Elapse enough time for a node info update
+    let time_before_update = mock_time.now();
+    elapse_node_info_update_interval(node_config.clone(), mock_time.clone()).await;
+
+    // Verify that a single node info request is received and respond
+    verify_node_info_request_and_respond(network_id, mock_monitoring_server, false, false).await;
+
+    // Wait until the network info state is updated by the client
+    wait_for_peer_state_update(
+        time_before_update,
+        peer_monitor_state,
+        peer_network_id,
+        vec![PeerStateKey::NodeInfo],
+    )
+    .await;
+
+    // Verify the network info state
+    verify_peer_network_state(
+        peer_monitor_state,
+        peer_network_id,
+        connected_peers,
+        distance_from_validators,
+        0,
+    );
+}
+
 /// Verifies that all request types are received by the server
 /// and responds to them using the specified data.
 pub async fn verify_all_requests_and_respond(
     network_id: &NetworkId,
     mock_monitoring_server: &mut MockMonitoringServer,
-    connected_peers: &HashMap<PeerNetworkId, ConnectionMetadata>,
-    distance_from_validators: u64,
+    num_expected_requests: u64,
+    network_information_response: Option<NetworkInformationResponse>,
+    node_information_response: Option<NodeInformationResponse>,
 ) {
     // Create a task that waits for all the requests and sends responses
     let handle_requests = async move {
-        // Counters to ensure we only receive one type of each request
-        let mut num_received_latency_pings = 0;
-        let mut num_received_network_requests = 0;
+        // The set of requests already seen to ensure we only receive one of each request type
+        let mut request_types_already_seen = HashSet::new();
 
-        // We expect a request to be sent for each peer state type
-        let num_state_types = PeerStateKey::get_all_keys().len();
-        for _ in 0..num_state_types {
-            // Process the peer monitoring request
+        // Handle each request
+        for _ in 0..num_expected_requests {
+            // Get the network request
             let network_request = mock_monitoring_server
                 .next_request(network_id)
                 .await
                 .unwrap();
+
+            // Verify we haven't seen a request of this type before
+            let request_type = network_request
+                .peer_monitoring_service_request
+                .get_label()
+                .to_string();
+            if request_types_already_seen.contains(&request_type) {
+                panic!("Received duplicate requests of type: {:?}", request_type);
+            } else {
+                request_types_already_seen.insert(request_type);
+            }
+
+            // Process the peer monitoring request
             let response = match network_request.peer_monitoring_service_request {
                 PeerMonitoringServiceRequest::GetNetworkInformation => {
-                    // Increment the counter
-                    num_received_network_requests += 1;
-
-                    // Return the response
-                    PeerMonitoringServiceResponse::NetworkInformation(NetworkInformationResponse {
-                        connected_peers: connected_peers.clone(),
-                        distance_from_validators,
-                    })
+                    PeerMonitoringServiceResponse::NetworkInformation(
+                        network_information_response.clone().unwrap(),
+                    )
+                },
+                PeerMonitoringServiceRequest::GetNodeInformation => {
+                    PeerMonitoringServiceResponse::NodeInformation(
+                        node_information_response.clone().unwrap(),
+                    )
                 },
                 PeerMonitoringServiceRequest::LatencyPing(latency_ping) => {
-                    // Increment the counter
-                    num_received_latency_pings += 1;
-
-                    // Return the response
                     PeerMonitoringServiceResponse::LatencyPing(LatencyPingResponse {
                         ping_counter: latency_ping.ping_counter,
                     })
@@ -428,11 +556,6 @@ pub async fn verify_all_requests_and_respond(
 
             // Send the response
             network_request.response_sender.send(Ok(response));
-        }
-
-        // Verify each request was received exactly once
-        if (num_received_latency_pings != 1) || (num_received_network_requests != 1) {
-            panic!("The requests were not received exactly once!");
         }
     };
 
@@ -519,7 +642,7 @@ pub async fn verify_network_info_request_and_respond(
 ) {
     // Create a task that waits for the request and sends a response
     let handle_request = async move {
-        // Process the latency ping request
+        // Process the network info request
         let network_request = mock_monitoring_server
             .next_request(network_id)
             .await
@@ -562,6 +685,57 @@ pub async fn verify_network_info_request_and_respond(
     .await;
 }
 
+/// Verifies that a node info request is received by the
+/// server and sends a response.
+pub async fn verify_node_info_request_and_respond(
+    network_id: &NetworkId,
+    mock_monitoring_server: &mut MockMonitoringServer,
+    respond_with_invalid_message: bool,
+    skip_sending_a_response: bool,
+) {
+    // Create a task that waits for the request and sends a response
+    let handle_request = async move {
+        // Process the node info request
+        let network_request = mock_monitoring_server
+            .next_request(network_id)
+            .await
+            .unwrap();
+        let response = match network_request.peer_monitoring_service_request {
+            PeerMonitoringServiceRequest::GetNodeInformation => {
+                if respond_with_invalid_message {
+                    // Respond with the wrong message type
+                    PeerMonitoringServiceResponse::LatencyPing(LatencyPingResponse {
+                        ping_counter: 10,
+                    })
+                } else {
+                    // Send a valid response
+                    PeerMonitoringServiceResponse::NodeInformation(NodeInformationResponse {
+                        git_hash: "".to_string(),
+                        highest_synced_epoch: 0,
+                        highest_synced_version: 0,
+                        ledger_timestamp_usecs: 0,
+                        lowest_available_version: 0,
+                        uptime: Default::default(),
+                    })
+                }
+            },
+            request => panic!("Unexpected monitoring request received: {:?}", request),
+        };
+
+        // Send the response
+        if !skip_sending_a_response {
+            network_request.response_sender.send(Ok(response));
+        }
+    };
+
+    // Spawn the task with a timeout
+    spawn_with_timeout(
+        handle_request,
+        "Timed-out while waiting for a node info request",
+    )
+    .await;
+}
+
 /// Verifies the latency state of the peer monitor
 pub fn verify_peer_latency_state(
     peer_monitor_state: &PeerMonitorState,
@@ -594,7 +768,13 @@ pub fn verify_peer_monitor_state(
     peer_network_id: &PeerNetworkId,
     expected_connected_peers: &HashMap<PeerNetworkId, ConnectionMetadata>,
     expected_distance_from_validators: u64,
+    expected_git_hash: String,
+    expected_highest_synced_epoch: u64,
+    expected_highest_synced_version: u64,
+    expected_ledger_timestamp_usecs: u64,
+    expected_lowest_available_version: u64,
     expected_num_recorded_latency_pings: u64,
+    expected_uptime: Duration,
 ) {
     // Verify the latency ping state
     verify_peer_latency_state(
@@ -610,6 +790,19 @@ pub fn verify_peer_monitor_state(
         peer_network_id,
         expected_connected_peers,
         expected_distance_from_validators,
+        0,
+    );
+
+    // Verify the node state
+    verify_peer_node_state(
+        peer_monitor_state,
+        peer_network_id,
+        expected_git_hash,
+        expected_highest_synced_epoch,
+        expected_highest_synced_version,
+        expected_ledger_timestamp_usecs,
+        expected_lowest_available_version,
+        expected_uptime,
         0,
     );
 }
@@ -641,6 +834,52 @@ pub fn verify_peer_network_state(
     );
     assert_eq!(
         network_info_state
+            .get_request_tracker()
+            .read()
+            .get_num_consecutive_failures(),
+        expected_num_consecutive_failures
+    );
+}
+
+/// Verifies the node state of the peer monitor
+pub fn verify_peer_node_state(
+    peer_monitor_state: &PeerMonitorState,
+    peer_network_id: &PeerNetworkId,
+    expected_git_hash: String,
+    expected_highest_synced_epoch: u64,
+    expected_highest_synced_version: u64,
+    expected_ledger_timestamp_usecs: u64,
+    expected_lowest_available_version: u64,
+    expected_uptime: Duration,
+    expected_num_consecutive_failures: u64,
+) {
+    // Fetch the peer monitoring metadata
+    let peer_states = peer_monitor_state.peer_states.read();
+    let peer_state = peer_states.get(peer_network_id).unwrap();
+
+    // Verify the node state
+    let node_info_state = peer_state.get_node_info_state().unwrap();
+    let latest_node_info_response = node_info_state.get_latest_node_info_response().unwrap();
+    assert_eq!(latest_node_info_response.git_hash, expected_git_hash,);
+    assert_eq!(
+        latest_node_info_response.highest_synced_epoch,
+        expected_highest_synced_epoch,
+    );
+    assert_eq!(
+        latest_node_info_response.highest_synced_version,
+        expected_highest_synced_version,
+    );
+    assert_eq!(
+        latest_node_info_response.ledger_timestamp_usecs,
+        expected_ledger_timestamp_usecs,
+    );
+    assert_eq!(
+        latest_node_info_response.lowest_available_version,
+        expected_lowest_available_version,
+    );
+    assert_eq!(latest_node_info_response.uptime, expected_uptime,);
+    assert_eq!(
+        node_info_state
             .get_request_tracker()
             .read()
             .get_num_consecutive_failures(),

@@ -7,8 +7,9 @@ use crate::{
         mock::MockMonitoringServer,
         utils::{
             elapse_latency_update_interval, elapse_metadata_updater_interval,
-            elapse_network_info_update_interval, get_config_without_latency_pings,
-            get_config_without_network_info_requests, initialize_and_verify_peer_states,
+            elapse_network_info_update_interval, get_config_with_only_latency_ping_requests,
+            get_config_with_only_network_info_requests, get_config_with_only_node_info_requests,
+            get_config_without_node_info_requests, initialize_and_verify_peer_states,
             start_peer_metadata_updater, start_peer_monitor, update_latency_info_for_peer,
             update_network_info_for_peer, verify_all_requests_and_respond,
             verify_and_handle_latency_ping, verify_and_handle_network_info_request,
@@ -26,6 +27,7 @@ use aptos_config::{
     network_id::{NetworkId, PeerNetworkId},
 };
 use aptos_network::transport::ConnectionMetadata;
+use aptos_peer_monitoring_service_types::NetworkInformationResponse;
 use aptos_time_service::TimeServiceTrait;
 use aptos_types::PeerId;
 use maplit::hashmap;
@@ -38,8 +40,10 @@ async fn test_basic_peer_monitor_loop() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(vec![network_id]);
 
+    // Create a node config where node info requests don't refresh
+    let node_config = get_config_without_node_info_requests();
+
     // Spawn the peer monitoring client
-    let node_config = NodeConfig::default();
     start_peer_monitor(
         peer_monitoring_client,
         &peer_monitor_state,
@@ -80,16 +84,21 @@ async fn test_basic_peer_monitor_loop() {
     .await;
 
     // Elapse enough time for a network info request (which should also
-    // trigger another latency ping).
+    // trigger another latency ping and a network info request).
     let time_before_update = mock_time.now();
     elapse_network_info_update_interval(node_config, mock_time).await;
 
     // Verify that both a latency and network request are received and respond
+    let network_info_response = NetworkInformationResponse {
+        connected_peers: connected_peers.clone(),
+        distance_from_validators,
+    };
     verify_all_requests_and_respond(
         &network_id,
         &mut mock_monitoring_server,
-        &connected_peers,
-        distance_from_validators,
+        2,
+        Some(network_info_response),
+        None,
     )
     .await;
 
@@ -98,17 +107,25 @@ async fn test_basic_peer_monitor_loop() {
         time_before_update,
         &peer_monitor_state,
         &validator_peer,
-        PeerStateKey::get_all_keys(),
+        vec![PeerStateKey::LatencyInfo, PeerStateKey::NetworkInfo],
     )
     .await;
 
-    // Verify the new state of the peer monitor
-    verify_peer_monitor_state(
+    // Verify the latency ping state
+    verify_peer_latency_state(
         &peer_monitor_state,
-        &validator_peer,
+        peer_network_id,
+        expected_num_recorded_latency_pings,
+        0,
+    );
+
+    // Verify the network state
+    verify_peer_network_state(
+        &peer_monitor_state,
+        peer_network_id,
         &connected_peers,
         distance_from_validators,
-        3,
+        0,
     );
 }
 
@@ -227,8 +244,8 @@ async fn test_latency_pings() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(vec![network_id]);
 
-    // Create a node config where network info requests don't refresh
-    let node_config = get_config_without_network_info_requests();
+    // Create a node config where only latency pings refresh
+    let node_config = get_config_with_only_latency_ping_requests();
 
     // Spawn the peer monitoring client
     start_peer_monitor(
@@ -282,8 +299,8 @@ async fn test_latency_ping_failures() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(vec![network_id]);
 
-    // Create a node config where network info requests don't refresh
-    let node_config = get_config_without_network_info_requests();
+    // Create a node config where only latency pings refresh
+    let node_config = get_config_with_only_latency_ping_requests();
 
     // Spawn the peer monitoring client
     start_peer_monitor(
@@ -417,8 +434,8 @@ async fn test_network_info_requests() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(vec![network_id]);
 
-    // Create a node config where latency pings don't refresh
-    let node_config = get_config_without_latency_pings();
+    // Create a node config where only network infos refresh
+    let node_config = get_config_with_only_network_info_requests();
 
     // Spawn the peer monitoring client
     start_peer_monitor(
@@ -473,8 +490,8 @@ async fn test_network_info_request_failures() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(vec![network_id]);
 
-    // Create a node config where latency pings don't refresh
-    let node_config = get_config_without_latency_pings();
+    // Create a node config where only network infos refresh
+    let node_config = get_config_with_only_network_info_requests();
 
     // Spawn the peer monitoring client
     start_peer_monitor(
@@ -645,4 +662,60 @@ async fn test_network_info_request_failures() {
         distance_from_validators,
         0,
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_node_info_requests() {
+    // Create the peer monitoring client and server
+    let network_id = NetworkId::Validator;
+    let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
+        MockMonitoringServer::new(vec![network_id]);
+
+    // Create a node config where only node infos refresh
+    let node_config = get_config_with_only_node_info_requests();
+
+    // Spawn the peer monitoring client
+    start_peer_monitor(
+        peer_monitoring_client,
+        &peer_monitor_state,
+        &time_service,
+        &node_config,
+    )
+    .await;
+
+    // Verify the initial state of the peer monitor
+    verify_empty_peer_states(&peer_monitor_state);
+
+    // Add a connected validator peer
+    let validator_peer = mock_monitoring_server.add_new_peer(network_id, PeerRole::Validator);
+
+    // Initialize all the peer states by running the peer monitor once
+    let mock_time = time_service.into_mock();
+    let _ = initialize_and_verify_peer_states(
+        &network_id,
+        &mut mock_monitoring_server,
+        &peer_monitor_state,
+        &node_config,
+        &validator_peer,
+        &mock_time,
+    )
+    .await;
+
+    // Handle many node info requests and responses
+    let distance_from_validators = 0;
+    for _ in 0..20 {
+        let connected_peers =
+            hashmap! { PeerNetworkId::random() => ConnectionMetadata::mock(PeerId::random()) };
+        verify_and_handle_network_info_request(
+            &network_id,
+            &mut mock_monitoring_server,
+            &peer_monitor_state,
+            &node_config,
+            &validator_peer,
+            &mock_time,
+            &connected_peers,
+            distance_from_validators,
+        )
+        .await;
+    }
 }

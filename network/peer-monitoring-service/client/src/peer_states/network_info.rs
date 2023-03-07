@@ -202,7 +202,7 @@ mod test {
         let mut network_info_state = create_network_info_state(RoleType::Validator);
 
         // Verify there is no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 0 (the peer is a VFN, not a validator).
@@ -214,7 +214,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 1 (the peer is a validator, not a VFN).
@@ -226,7 +226,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 10 (the peer is a VFN).
@@ -238,7 +238,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with a valid depth of
         // 1 (the peer is a VFN).
@@ -250,7 +250,7 @@ mod test {
         );
 
         // Verify the latest stored distance is correct
-        verify_network_response_distance(&mut network_info_state, 1);
+        verify_network_response_distance(&network_info_state, 1);
     }
 
     #[test]
@@ -259,7 +259,7 @@ mod test {
         let mut network_info_state = create_network_info_state(RoleType::FullNode);
 
         // Verify there is no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 1 (the peer is a validator).
@@ -271,7 +271,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 0 (the peer is a PFN, not a validator).
@@ -283,7 +283,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 1 (the peer is a VFN, but VFNs can't connect to other VFN networks).
@@ -295,7 +295,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with a valid depth of
         // 2 (the peer is a public fullnode).
@@ -307,7 +307,7 @@ mod test {
         );
 
         // Verify the latest stored distance is correct
-        verify_network_response_distance(&mut network_info_state, 2);
+        verify_network_response_distance(&network_info_state, 2);
     }
 
     #[test]
@@ -316,7 +316,7 @@ mod test {
         let mut network_info_state = create_network_info_state(RoleType::FullNode);
 
         // Verify there is no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 0 (the peer is a PFN, not a validator).
@@ -328,7 +328,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 1 (the peer is a PFN, not a VFN).
@@ -340,7 +340,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Attempt to store a network response with an invalid depth of
         // 2 (the peer is a VFN).
@@ -352,7 +352,7 @@ mod test {
         );
 
         // Verify there is still no latest network info response
-        verify_empty_network_response(&mut network_info_state);
+        verify_empty_network_response(&network_info_state);
 
         // Handle two correct responses
         for distance_from_validators in [2, 3] {
@@ -366,7 +366,7 @@ mod test {
             );
 
             // Verify the latest stored distance is correct
-            verify_network_response_distance(&mut network_info_state, distance_from_validators);
+            verify_network_response_distance(&network_info_state, distance_from_validators);
         }
     }
 
@@ -420,7 +420,7 @@ mod test {
     }
 
     /// Verifies that there is no latest network info response stored
-    fn verify_empty_network_response(network_info_state: &mut NetworkInfoState) {
+    fn verify_empty_network_response(network_info_state: &NetworkInfoState) {
         assert!(network_info_state
             .get_latest_network_info_response()
             .is_none());
@@ -428,7 +428,7 @@ mod test {
 
     /// Verifies that the latest network info response has a valid distance
     fn verify_network_response_distance(
-        network_info_state: &mut NetworkInfoState,
+        network_info_state: &NetworkInfoState,
         distance_from_validators: u64,
     ) {
         let network_info_response = network_info_state

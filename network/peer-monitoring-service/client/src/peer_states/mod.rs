@@ -13,6 +13,7 @@ use tokio::runtime::Handle;
 pub mod key_value;
 mod latency_info;
 mod network_info;
+mod node_info;
 pub mod peer_state;
 mod request_tracker;
 

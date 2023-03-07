@@ -7,8 +7,8 @@ use crate::{
         mock::MockMonitoringServer,
         utils::{
             elapse_latency_update_interval, elapse_metadata_updater_interval,
-            elapse_network_info_update_interval, get_config_without_latency_pings,
-            get_config_without_network_info_requests, get_distance_from_validators,
+            elapse_network_info_update_interval, get_config_with_only_latency_ping_requests,
+            get_config_with_only_network_info_requests, get_distance_from_validators,
             initialize_and_verify_peer_states, spawn_with_timeout, start_peer_metadata_updater,
             start_peer_monitor, update_latency_info_for_peer, update_network_info_for_peer,
             verify_and_handle_latency_ping, verify_empty_peer_states,
@@ -219,8 +219,8 @@ async fn test_latency_ping() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(all_network_ids.clone());
 
-    // Create a node config where network info requests don't refresh
-    let node_config = get_config_without_network_info_requests();
+    // Create a node config where only latency pings refresh
+    let node_config = get_config_with_only_latency_ping_requests();
 
     // Spawn the peer monitoring client
     start_peer_monitor(
@@ -322,8 +322,8 @@ async fn test_network_info() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(all_network_ids.clone());
 
-    // Create a node config where latency pings don't refresh
-    let node_config = get_config_without_latency_pings();
+    // Create a node config where only network infos refresh
+    let node_config = get_config_with_only_network_info_requests();
 
     // Spawn the peer monitoring client
     start_peer_monitor(
@@ -446,8 +446,8 @@ async fn test_peer_connections() {
     let (peer_monitoring_client, mut mock_monitoring_server, peer_monitor_state, time_service) =
         MockMonitoringServer::new(all_network_ids.clone());
 
-    // Create a node config where network info requests don't refresh
-    let node_config = get_config_without_network_info_requests();
+    // Create a node config where only latency pings refresh
+    let node_config = get_config_with_only_latency_ping_requests();
 
     // Spawn the peer monitoring client
     start_peer_monitor(

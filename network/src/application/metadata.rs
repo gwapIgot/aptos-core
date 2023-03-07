@@ -22,8 +22,8 @@ pub enum ConnectionState {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct PeerMonitoringMetadata {
     pub average_ping_latency_secs: Option<f64>, // The average latency ping for the peer
-    pub connected_peers: Option<HashMap<PeerNetworkId, ConnectionMetadata>>, // Connected peers and metadata
-    pub distance_from_validators: Option<u64>, // The known distance from the validator set
+    pub latest_network_info_response: Option<NetworkInformationResponse>, // The latest network info response
+    pub latest_node_info_response: Option<NodeInfoResponse>, // The latest node info response
 }
 
 /// We must manually define this because f64 doesn't implement Eq. Instead,
@@ -33,13 +33,13 @@ impl Eq for PeerMonitoringMetadata {}
 impl PeerMonitoringMetadata {
     pub fn new(
         average_ping_latency_secs: Option<f64>,
-        connected_peers: Option<HashMap<PeerNetworkId, ConnectionMetadata>>,
-        distance_from_validators: Option<u64>,
+        latest_network_info_response: Option<NetworkInfoResponse>,
+        latest_node_info_response: Option<NodeInfoResponse>,
     ) -> Self {
         PeerMonitoringMetadata {
             average_ping_latency_secs,
-            connected_peers,
-            distance_from_validators,
+            latest_network_info_response,
+            latest_node_info_response,
         }
     }
 }
