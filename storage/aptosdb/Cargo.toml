@@ -43,6 +43,7 @@ itertools = { workspace = true }
 lru = { workspace = true }
 move-core-types = { workspace = true }
 move-resource-viewer = { workspace = true }
+num_cpus = { workspace = true }
 num-derive = { workspace = true }
 once_cell = { workspace = true }
 owo-colors = { workspace = true, optional = true }

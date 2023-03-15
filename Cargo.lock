@@ -808,6 +808,7 @@ dependencies = [
  "move-core-types",
  "move-resource-viewer",
  "num-derive",
+ "num_cpus",
  "once_cell",
  "owo-colors",
  "proptest",

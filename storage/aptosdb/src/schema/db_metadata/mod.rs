@@ -51,6 +51,7 @@ pub enum DbMetadataKey {
     StateSnapshotRestoreProgress(Version),
     LedgerCommitProgress,
     StateKVCommitProgress,
+    StateKvShardCommitProgress(usize),
     OverallCommitProgress,
 }
 
