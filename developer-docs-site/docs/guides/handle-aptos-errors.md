@@ -20,6 +20,12 @@ For the sources of these errors, see:
 
 Help us update this list by sending pull requests containing the errors you encounter. If you don't know how to resolve the error, as described int the *Action* column, simply leave it blank.
 
+## Move Compiler
+
+| Error     | Meaning  | Possible Resolution |
+| ------- | :--: | --- |
+|entry function cannot return values| Failed the compile-time checks for transaction arguments | Remove old entry functions if no compatability issues, or use the `#[legacy_entry_fun]` attribute to bypass checks |
+
 ## Move Virtual Machine (VM)
 
 | Error | Meaning  | Possible Resolution |
