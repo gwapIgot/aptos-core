@@ -10,6 +10,7 @@ use crate::{
     response::{
         account_not_found, resource_not_found, struct_field_not_found, BadRequestError,
         BasicErrorWith404, BasicResponse, BasicResponseStatus, BasicResultWith404, InternalError,
+        NotFoundError,
     },
     ApiTags,
 };
@@ -141,6 +142,8 @@ impl AccountsApi {
         accept_type: AcceptType,
         /// Address of account with or without a `0x` prefix
         address: Path<Address>,
+        /// If true, include information about which functions are view functions.
+        lookup_view: Query<Option<bool>>,
         /// Ledger version to get state of account
         ///
         /// If not provided, it will be the latest version
@@ -167,7 +170,7 @@ impl AccountsApi {
             start.0.map(StateKey::from),
             limit.0,
         )?;
-        account.modules(&accept_type)
+        account.modules(&accept_type, lookup_view.unwrap_or(false))
     }
 }
 
@@ -376,7 +379,11 @@ impl Account {
     ///
     /// Note: For the BCS response, if results are being returned in pages, i.e. with the
     /// `start` and `limit` query parameters, the results will only be sorted within each page.
-    pub fn modules(self, accept_type: &AcceptType) -> BasicResultWith404<Vec<MoveModuleBytecode>> {
+    pub fn modules(
+        self,
+        accept_type: &AcceptType,
+        lookup_view: bool,
+    ) -> BasicResultWith404<Vec<MoveModuleBytecode>> {
         // check account exists
         self.verify_account_or_object_resource()?;
         let max_account_modules_page_size = self.context.max_account_modules_page_size();
@@ -408,18 +415,38 @@ impl Account {
                 // Read bytecode and parse ABIs for output
                 let mut converted_modules = Vec::new();
                 for (_, module) in modules {
-                    converted_modules.push(
-                        MoveModuleBytecode::new(module.clone())
-                            .try_parse_abi()
-                            .context("Failed to parse move module ABI")
+                    let move_module_bytecode = MoveModuleBytecode::new(module.clone())
+                        .try_parse_abi()
+                        .context("Failed to parse move module ABI")
+                        .map_err(|err| {
+                            BasicErrorWith404::internal_with_code(
+                                err,
+                                AptosErrorCode::InternalError,
+                                &self.latest_ledger_info,
+                            )
+                        })?;
+                    // If requested, attach information about whether the functions in
+                    // the modules are view functions.
+                    let move_module_bytecode = if lookup_view {
+                        let state_view = self
+                            .context
+                            .state_view_at_version(self.ledger_version)
                             .map_err(|err| {
-                                BasicErrorWith404::internal_with_code(
+                                BasicErrorWith404::not_found_with_code(
                                     err,
-                                    AptosErrorCode::InternalError,
+                                    AptosErrorCode::VersionNotFound,
                                     &self.latest_ledger_info,
                                 )
-                            })?,
-                    );
+                            })?;
+                        self.context.attach_view_function_information(
+                            move_module_bytecode,
+                            &state_view,
+                            &self.latest_ledger_info,
+                        )?
+                    } else {
+                        move_module_bytecode
+                    };
+                    converted_modules.push(move_module_bytecode);
                 }
                 BasicResponse::try_from_json((
                     converted_modules,

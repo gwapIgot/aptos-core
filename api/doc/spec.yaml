@@ -868,6 +868,14 @@ paths:
         required: true
         deprecated: false
         explode: true
+      - name: lookup_view
+        schema:
+          type: boolean
+        in: query
+        description: If true, include information about which functions are view functions.
+        required: false
+        deprecated: false
+        explode: true
       - name: ledger_version
         schema:
           $ref: '#/components/schemas/U64'
@@ -3847,6 +3855,14 @@ paths:
         in: path
         description: Name of module to retrieve e.g. `coin`
         required: true
+        deprecated: false
+        explode: true
+      - name: lookup_view
+        schema:
+          type: boolean
+        in: query
+        description: If true, include information about which functions are view functions.
+        required: false
         deprecated: false
         explode: true
       - name: ledger_version
@@ -9486,6 +9502,11 @@ components:
           type: boolean
           description: Whether the function can be called as an entry function directly
             in a transaction
+        is_view_function:
+          type: boolean
+          description: |-
+            Whether the function is a view function. If we didn't look this up (since this
+            requires us to invoke the VM), this will be None.
         generic_type_params:
           type: array
           description: Generic type params associated with the Move function

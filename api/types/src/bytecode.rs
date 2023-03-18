@@ -129,6 +129,7 @@ pub trait Bytecode {
             name: name.into(),
             visibility: def.visibility.into(),
             is_entry: def.is_entry,
+            is_view_function: None,
             generic_type_params: fhandle
                 .type_parameters
                 .iter()

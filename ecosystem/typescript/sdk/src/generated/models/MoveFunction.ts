@@ -18,6 +18,11 @@ export type MoveFunction = {
      */
     is_entry: boolean;
     /**
+     * Whether the function is a view function. If we didn't look this up (since this
+     * requires us to invoke the VM), this will be None.
+     */
+    is_view_function?: boolean;
+    /**
      * Generic type params associated with the Move function
      */
     generic_type_params: Array<MoveFunctionGenericTypeParam>;

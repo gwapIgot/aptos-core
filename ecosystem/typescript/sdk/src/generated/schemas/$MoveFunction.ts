@@ -17,6 +17,11 @@ export const $MoveFunction = {
             description: `Whether the function can be called as an entry function directly in a transaction`,
             isRequired: true,
         },
+        is_view_function: {
+            type: 'boolean',
+            description: `Whether the function is a view function. If we didn't look this up (since this
+            requires us to invoke the VM), this will be None.`,
+        },
         generic_type_params: {
             type: 'array',
             contains: {

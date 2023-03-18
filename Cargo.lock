@@ -346,6 +346,7 @@ dependencies = [
  "aptos-crypto",
  "aptos-logger",
  "aptos-openapi",
+ "aptos-state-view",
  "aptos-storage-interface",
  "aptos-types",
  "aptos-vm",

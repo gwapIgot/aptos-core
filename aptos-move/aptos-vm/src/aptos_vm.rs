@@ -23,7 +23,7 @@ use aptos_aggregator::{
     transaction::{ChangeSetExt, TransactionOutputExt},
 };
 use aptos_crypto::HashValue;
-use aptos_framework::natives::code::PublishRequest;
+use aptos_framework::{natives::code::PublishRequest, RuntimeModuleMetadataV1};
 use aptos_gas::{AptosGasMeter, ChangeSetConfigs};
 use aptos_logger::prelude::*;
 use aptos_state_view::StateView;
@@ -1310,6 +1310,21 @@ impl AptosVM {
             .into_iter()
             .map(|(bytes, _ty)| bytes)
             .collect::<Vec<_>>())
+    }
+
+    pub fn load_module_metadata(
+        state_view: &impl StateView,
+        module_id: &ModuleId,
+        func_name: &Identifier,
+    ) -> Result<Option<RuntimeModuleMetadataV1>> {
+        let vm = AptosVM::new(state_view);
+        let resolver = &state_view.as_move_resolver();
+        let resolver = vm.0.new_move_resolver(resolver);
+        let session = vm.new_session(&resolver, SessionId::Void);
+        // We have to load this prior to extracting module metadata to load the
+        // necessary information into cache.
+        session.load_function_without_types(module_id, func_name)?;
+        Ok(vm.0.extract_module_metadata(module_id))
     }
 
     fn run_prologue_with_payload<S: MoveResolverExt, SS: MoveResolverExt>(

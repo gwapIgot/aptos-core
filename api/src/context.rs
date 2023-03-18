@@ -7,12 +7,14 @@ use crate::{
     response::{
         bcs_api_disabled, block_not_found_by_height, block_not_found_by_version,
         block_pruned_by_height, json_api_disabled, version_not_found, version_pruned,
-        ForbiddenError, InternalError, NotFoundError, ServiceUnavailableError, StdApiError,
+        ForbiddenError, GoneError, InternalError, NotFoundError, ServiceUnavailableError,
+        StdApiError,
     },
 };
 use anyhow::{bail, ensure, format_err, Context as AnyhowContext, Result};
 use aptos_api_types::{
-    AptosErrorCode, AsConverter, BcsBlock, GasEstimation, LedgerInfo, TransactionOnChainData,
+    AptosErrorCode, AsConverter, BcsBlock, GasEstimation, LedgerInfo, MoveModuleBytecode,
+    TransactionOnChainData,
 };
 use aptos_config::config::{NodeConfig, RoleType};
 use aptos_crypto::HashValue;
@@ -412,6 +414,22 @@ impl Context {
             ))
         });
         Ok((kvs, next_key))
+    }
+
+    pub fn attach_view_function_information<
+        E: InternalError + ServiceUnavailableError + GoneError + NotFoundError,
+    >(
+        &self,
+        move_module_bytecode: MoveModuleBytecode,
+        state_view: &DbStateView,
+        latest_ledger_info: &LedgerInfo,
+    ) -> Result<MoveModuleBytecode, E> {
+        move_module_bytecode
+            .attach_view_function_information(&state_view)
+            .context("Failed to lookup view function information")
+            .map_err(|err| {
+                E::internal_with_code(err, AptosErrorCode::InternalError, latest_ledger_info)
+            })
     }
 
     // This function should be deprecated. DO NOT USE it.

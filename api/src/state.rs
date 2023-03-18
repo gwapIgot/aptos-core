@@ -104,6 +104,8 @@ impl StateApi {
         address: Path<Address>,
         /// Name of module to retrieve e.g. `coin`
         module_name: Path<IdentifierWrapper>,
+        /// If true, include information about which functions are view functions.
+        lookup_view: Query<Option<bool>>,
         /// Ledger version to get state of account
         ///
         /// If not provided, it will be the latest version
@@ -117,7 +119,13 @@ impl StateApi {
         fail_point_poem("endpoint_get_account_module")?;
         self.context
             .check_api_output_enabled("Get account module", &accept_type)?;
-        self.module(&accept_type, address.0, module_name.0, ledger_version.0)
+        self.module(
+            &accept_type,
+            address.0,
+            module_name.0,
+            lookup_view.unwrap_or(false),
+            ledger_version.0,
+        )
     }
 
     /// Get table item
@@ -278,6 +286,7 @@ impl StateApi {
         accept_type: &AcceptType,
         address: Address,
         name: IdentifierWrapper,
+        lookup_view: bool,
         ledger_version: Option<U64>,
     ) -> BasicResultWith404<MoveModuleBytecode> {
         let module_id = ModuleId::new(address.into(), name.into());
@@ -312,7 +321,15 @@ impl StateApi {
                             &ledger_info,
                         )
                     })?;
-
+                let module = if lookup_view {
+                    self.context.attach_view_function_information(
+                        module,
+                        &state_view,
+                        &ledger_info,
+                    )?
+                } else {
+                    module
+                };
                 BasicResponse::try_from_json((module, &ledger_info, BasicResponseStatus::Ok))
             },
             AcceptType::Bcs => {

@@ -4,7 +4,9 @@
 
 use crate::{Address, Bytecode, IdentifierWrapper, VerifyInput, VerifyInputWithRecursion};
 use anyhow::{bail, format_err};
+use aptos_state_view::StateView;
 use aptos_types::{account_config::CORE_CODE_ADDRESS, event::EventKey, transaction::Module};
+use aptos_vm::AptosVM;
 use move_binary_format::{
     access::ModuleAccess,
     file_format::{
@@ -958,6 +960,9 @@ pub struct MoveFunction {
     pub visibility: MoveFunctionVisibility,
     /// Whether the function can be called as an entry function directly in a transaction
     pub is_entry: bool,
+    /// Whether the function is a view function. If we didn't look this up (since this
+    /// requires us to invoke the VM), this will be None.
+    pub is_view_function: Option<bool>,
     /// Generic type params associated with the Move function
     pub generic_type_params: Vec<MoveFunctionGenericTypeParam>,
     /// Parameters associated with the move function
@@ -974,6 +979,7 @@ impl From<&CompiledScript> for MoveFunction {
             name: Identifier::new("main").unwrap().into(),
             visibility: MoveFunctionVisibility::Public,
             is_entry: true,
+            is_view_function: None,
             generic_type_params: script
                 .type_parameters
                 .iter()
@@ -1074,6 +1080,34 @@ impl MoveModuleBytecode {
             if let Ok(module) = CompiledModule::deserialize(self.bytecode.inner()) {
                 self.abi = Some(module.try_into()?);
             }
+        }
+        Ok(self)
+    }
+
+    // For each function in the module, attach whether it is a view function or not.
+    pub fn attach_view_function_information(
+        mut self,
+        state_view: &impl StateView,
+    ) -> anyhow::Result<Self> {
+        let abi = match self.abi {
+            Some(ref mut abi) => abi,
+            None => {
+                bail!("Failed to lookup ABI, cannot determine which functions are view functions")
+            },
+        };
+        let module_id = ModuleId::new(abi.address.into(), abi.name.clone().into());
+        for func in abi.exposed_functions.iter_mut() {
+            let module_metadata =
+                AptosVM::load_module_metadata(state_view, &module_id, &func.name.clone().into())?;
+            let is_view = if let Some(ref data) = module_metadata {
+                data.fun_attributes
+                    .get(func.name.as_str())
+                    .map(|attrs| attrs.iter().any(|attr| attr.is_view_function()))
+                    .unwrap_or_default()
+            } else {
+                false
+            };
+            func.is_view_function = Some(is_view);
         }
         Ok(self)
     }

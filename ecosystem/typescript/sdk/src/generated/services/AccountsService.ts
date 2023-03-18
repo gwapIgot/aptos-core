@@ -96,6 +96,7 @@ export class AccountsService {
      * The Aptos nodes prune account state history, via a configurable time window.
      * If the requested ledger version has been pruned, the server responds with a 410.
      * @param address Address of account with or without a `0x` prefix
+     * @param lookupView If true, include information about which functions are view functions.
      * @param ledgerVersion Ledger version to get state of account
      *
      * If not provided, it will be the latest version
@@ -113,6 +114,7 @@ export class AccountsService {
      */
     public getAccountModules(
         address: Address,
+        lookupView?: boolean,
         ledgerVersion?: U64,
         start?: StateKeyWrapper,
         limit?: number,
@@ -124,6 +126,7 @@ export class AccountsService {
                 'address': address,
             },
             query: {
+                'lookup_view': lookupView,
                 'ledger_version': ledgerVersion,
                 'start': start,
                 'limit': limit,
@@ -173,6 +176,7 @@ export class AccountsService {
      * If the requested ledger version has been pruned, the server responds with a 410.
      * @param address Address of account with or without a `0x` prefix
      * @param moduleName Name of module to retrieve e.g. `coin`
+     * @param lookupView If true, include information about which functions are view functions.
      * @param ledgerVersion Ledger version to get state of account
      *
      * If not provided, it will be the latest version
@@ -182,6 +186,7 @@ export class AccountsService {
     public getAccountModule(
         address: Address,
         moduleName: IdentifierWrapper,
+        lookupView?: boolean,
         ledgerVersion?: U64,
     ): CancelablePromise<MoveModuleBytecode> {
         return this.httpRequest.request({
@@ -192,6 +197,7 @@ export class AccountsService {
                 'module_name': moduleName,
             },
             query: {
+                'lookup_view': lookupView,
                 'ledger_version': ledgerVersion,
             },
         });
