@@ -1,0 +1,34 @@
+// Copyright © Aptos Foundation
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package aptos.api.v2;
+
+import "aptos/transaction/testing1/v1/transaction.proto";
+
+message GetAccountModuleRequest {
+    // Required; Account address, e.g. 0x1.
+    string account_address = 1;
+
+    // Required; The name of the module to retrieve, e.g. coin.
+    string module_name = 2;
+
+    // Optional; Ledger version at which to perform the lookup.
+    //
+    // If not given, the latest ledger state is used.
+    optional uint64 ledger_version = 3;
+}
+
+message GetAccountModuleResponse {
+    oneof module {
+        // Structured representation of a Move module.
+        aptos.transaction.testing1.v1.MoveModuleBytecode move_module_bytecode = 1;
+        // Raw bytes of a Move module.
+        bytes move_module_bytecode_raw = 2;
+    }
+}
+
+service ApiV2 {
+    rpc GetAccountModule(GetAccountModuleRequest) returns (GetAccountModuleResponse);
+}
