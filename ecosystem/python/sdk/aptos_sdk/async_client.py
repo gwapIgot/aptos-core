@@ -27,6 +27,7 @@ class ClientConfig:
     gas_unit_price: int = 100
     max_gas_amount: int = 100_000
     transaction_wait_in_seconds: int = 20
+    http2: bool = False
 
 
 class RestClient:
@@ -39,7 +40,7 @@ class RestClient:
 
     def __init__(self, base_url: str, client_config: ClientConfig = ClientConfig()):
         self.base_url = base_url
-        self.client = httpx.AsyncClient()
+        self.client = httpx.AsyncClient(http2=client_config.http2)
         self.client_config = client_config
         self._chain_id = None
 
